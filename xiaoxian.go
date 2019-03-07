@@ -44,6 +44,21 @@ func CleanEnglish(sentA string) string {
 	return rs
 }
 
+func CleanChineseSentence(sentA string) string {
+	rs := tk.Replace(sentA, "\r", "")
+	rs = tk.Replace(rs, "\"", "“")
+	rs = tk.Replace(rs, "!", "！")
+	rs = tk.Replace(rs, "?", "？")
+	rs = tk.Replace(rs, "(", "（")
+	rs = tk.Replace(rs, ")", "）")
+	rs = tk.Replace(rs, ",", "，")
+	rs = tk.Replace(rs, ":", "：")
+	rs = tk.Trim(rs)
+	rs = tk.RegReplace(rs, "\\s+", " ")
+
+	return rs
+}
+
 func EnsureValidEnglishOnly(textA string, ifOtherEmptyA bool) string {
 	rs := tk.Replace(textA, "\r", "")
 	rs = tk.Replace(rs, "\u00e9", "\x0f")
@@ -469,7 +484,7 @@ func GetNamedEntityEnOL(strA string) ([]string, error) {
 
 func DownloadPagePostOnlyBaiduNLP(tokenA string, ifCustomA bool, postDataA string, timeoutSecsA time.Duration) string {
 	client := &http.Client{
-		Timeout: 1000000000 * timeoutSecsA,
+		Timeout: time.Second * timeoutSecsA,
 	}
 
 	var urlT string
@@ -503,29 +518,29 @@ func DownloadPagePostOnlyBaiduNLP(tokenA string, ifCustomA bool, postDataA strin
 	}
 }
 
-func TokenizeCnBaiduOL(textA string, ifCustomA bool, tokenA string) (rs string, err string, token string) {
+func TokenizeCnBaiduOL(textA string, ifCustomA bool, tokenA string, clientIdA string, clientSecretA string) (rs string, err string, token string) {
 	textT := strings.TrimSpace(textA)
 	if textT == "" {
 		return "", "empty text", ""
 	}
 
 	if tokenA == "" {
-		urlT := "https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=piL5FTys9yeXfnq9FwFKAWBU&client_secret=wx0jB8BEUM7fcu5m1mwM8Vp5srkUuxQY"
+		urlT := "https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=" + clientIdA + "&client_secret=" + clientSecretA
 
-		rs := TXDownloadPage(urlT, "GBK", nil, "", 15)
+		rs := tk.DownloadPage(urlT, "GBK", nil, "", 15)
 
-		matchT := TXRegFindFirst(rs, `"access_token":"([^"]*)"`, 1)
+		matchT := tk.RegFindFirst(rs, `"access_token":"([^"]*)"`, 1)
 
-		if TXIsErrorString(matchT) {
-			return "", TXGetErrorString(matchT), ""
+		if tk.IsErrorString(matchT) {
+			return "", tk.GetErrorString(matchT), ""
 		}
 
 		tokenA = matchT
 	}
 
-	textT := TXCleanChineseSentence(textA)
+	textT = CleanChineseSentence(textA)
 
-	rs = TXDownloadPagePostOnlyBaiduNLP(tokenA, ifCustomA, TXObjectToJSON(map[string]string{"text": textT}), 15)
+	rs = DownloadPagePostOnlyBaiduNLP(tokenA, ifCustomA, tk.ObjectToJSON(map[string]string{"text": textT}), 15)
 
 	m, errT := objx.FromJSON(rs)
 
@@ -533,20 +548,11 @@ func TokenizeCnBaiduOL(textA string, ifCustomA bool, tokenA string) (rs string, 
 		return "", errT.Error(), ""
 	}
 
-	//	TXPl("sr: %v", rs)
-
 	mi := m.Get("items").MSISlice()
 
-	//lentt := len(mi)
-
-	var tmpsl []string = make([]string, 0)
+	var tmpsl = make([]string, 0)
 
 	for _, v := range mi {
-		//		tmpi := v["basic_words"].([]interface{})
-
-		//		for _, vv := range tmpi {
-		//			tmpsl = append(tmpsl, vv.(string))
-		//		}
 		tmpss := v["item"].(string)
 
 		tmpsl = append(tmpsl, tmpss)
