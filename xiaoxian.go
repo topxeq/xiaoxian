@@ -482,6 +482,62 @@ func GetNamedEntityEnOL(strA string) ([]string, error) {
 	return strings.Split(resultT.Value, "|"), nil
 }
 
+func GetArticleDifficultyEnOL(strA string) (string, error) {
+	urlT := XiaoXianHost + "/japi"
+
+	paramsT := url.Values{}
+
+	paramsT.Set("txreq", "analyzeArticleDifficulty")
+	paramsT.Set("tid", XiaoXianDefaultTid)
+	paramsT.Set("article", strA)
+
+	responseT := tk.DownloadPageUTF8(urlT, paramsT, "", 15)
+
+	if tk.IsErrorString(responseT) {
+		return "", fmt.Errorf("%v", tk.GetErrorString(responseT))
+	}
+
+	resultT, errT := tk.TXResultFromString(responseT)
+
+	if errT != nil {
+		return "", errT
+	}
+
+	if resultT.Status != "success" {
+		return "", fmt.Errorf("%v", resultT.Value)
+	}
+
+	return resultT.Value, nil
+}
+
+func ParseSentenceEnOL(strA string) (string, error) {
+	urlT := XiaoXianHost + "/japi"
+
+	paramsT := url.Values{}
+
+	paramsT.Set("txreq", "parseSentExCompact")
+	paramsT.Set("tid", XiaoXianDefaultTid)
+	paramsT.Set("sent", strA)
+
+	responseT := tk.DownloadPageUTF8(urlT, paramsT, "", 15)
+
+	if tk.IsErrorString(responseT) {
+		return "", fmt.Errorf("%v", tk.GetErrorString(responseT))
+	}
+
+	resultT, errT := tk.TXResultFromString(responseT)
+
+	if errT != nil {
+		return "", errT
+	}
+
+	if resultT.Status != "success" {
+		return "", fmt.Errorf("%v", resultT.Value)
+	}
+
+	return resultT.Value, nil
+}
+
 func DownloadPagePostOnlyBaiduNLP(tokenA string, ifCustomA bool, postDataA string, timeoutSecsA time.Duration) string {
 	client := &http.Client{
 		Timeout: time.Second * timeoutSecsA,
@@ -556,6 +612,54 @@ func TokenizeCnBaiduOL(textA string, ifCustomA bool, tokenA string, clientIdA st
 		tmpss := v["item"].(string)
 
 		tmpsl = append(tmpsl, tmpss)
+	}
+
+	return strings.Join(tmpsl, " "), "", tokenA
+}
+
+func NerCnBaiduOL(textA string, ifCustomA bool, tokenA string, clientIdA string, clientSecretA string) (rs string, err string, token string) {
+	textT := strings.TrimSpace(textA)
+	if textT == "" {
+		return "", "empty text", ""
+	}
+
+	if tokenA == "" {
+		urlT := "https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=" + clientIdA + "&client_secret=" + clientSecretA
+
+		rs := tk.DownloadPage(urlT, "GBK", nil, "", 15)
+
+		matchT := tk.RegFindFirst(rs, `"access_token":"([^"]*)"`, 1)
+
+		if tk.IsErrorString(matchT) {
+			return "", tk.GetErrorString(matchT), ""
+		}
+
+		tokenA = matchT
+	}
+
+	textT = CleanChineseSentence(textA)
+
+	rs = DownloadPagePostOnlyBaiduNLP(tokenA, ifCustomA, tk.ObjectToJSON(map[string]string{"text": textT}), 15)
+
+	m, errT := objx.FromJSON(rs)
+
+	if errT != nil {
+		return "", errT.Error(), ""
+	}
+
+	mi := m.Get("items").MSISlice()
+
+	var tmpsl = make([]string, 0)
+
+	for _, v := range mi {
+		tmpss := v["item"].(string)
+		tmpner := v["ne"].(string)
+
+		if tmpner == "" {
+			continue
+		}
+
+		tmpsl = append(tmpsl, tmpss+"`"+tmpner)
 	}
 
 	return strings.Join(tmpsl, " "), "", tokenA
