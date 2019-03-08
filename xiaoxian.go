@@ -538,17 +538,25 @@ func ParseSentenceEnOL(strA string) (string, error) {
 	return resultT.Value, nil
 }
 
-func DownloadPagePostOnlyBaiduNLP(tokenA string, ifCustomA bool, postDataA string, timeoutSecsA time.Duration) string {
+func DownloadPagePostOnlyBaiduNLP(urlA string, tokenA string, ifCustomA bool, postDataA string, timeoutSecsA time.Duration) string {
 	client := &http.Client{
 		Timeout: time.Second * timeoutSecsA,
 	}
 
-	var urlT string
+	urlT := urlA
 
-	if ifCustomA {
-		urlT = "https://aip.baidubce.com/rpc/2.0/nlp/v1/lexer_custom?access_token=" + tokenA
-	} else {
-		urlT = "https://aip.baidubce.com/rpc/2.0/nlp/v1/lexer?access_token=" + tokenA
+	if urlT == "" {
+		if ifCustomA {
+			urlT = "https://aip.baidubce.com/rpc/2.0/nlp/v1/lexer_custom?access_token=" + tokenA
+		} else {
+			urlT = "https://aip.baidubce.com/rpc/2.0/nlp/v1/lexer?access_token=" + tokenA
+		}
+	}
+
+	if urlT != "" {
+		if (tokenA != "") && (!tk.EndsWith(urlT, tokenA)) {
+			urlT += "?access_token=" + tokenA
+		}
 	}
 
 	var respT *http.Response
@@ -596,7 +604,7 @@ func TokenizeCnBaiduOL(textA string, ifCustomA bool, tokenA string, clientIdA st
 
 	textT = CleanChineseSentence(textA)
 
-	rs = DownloadPagePostOnlyBaiduNLP(tokenA, ifCustomA, tk.ObjectToJSON(map[string]string{"text": textT}), 15)
+	rs = DownloadPagePostOnlyBaiduNLP("", tokenA, ifCustomA, tk.ObjectToJSON(map[string]string{"text": textT}), 15)
 
 	m, errT := objx.FromJSON(rs)
 
@@ -639,7 +647,7 @@ func NerCnBaiduOL(textA string, ifCustomA bool, tokenA string, clientIdA string,
 
 	textT = CleanChineseSentence(textA)
 
-	rs = DownloadPagePostOnlyBaiduNLP(tokenA, ifCustomA, tk.ObjectToJSON(map[string]string{"text": textT}), 15)
+	rs = DownloadPagePostOnlyBaiduNLP("", tokenA, ifCustomA, tk.ObjectToJSON(map[string]string{"text": textT}), 15)
 
 	m, errT := objx.FromJSON(rs)
 
@@ -663,4 +671,49 @@ func NerCnBaiduOL(textA string, ifCustomA bool, tokenA string, clientIdA string,
 	}
 
 	return strings.Join(tmpsl, " "), "", tokenA
+}
+
+func SentimentCnBaiduOL(textA string, tokenA string, clientIdA string, clientSecretA string) (result map[string]float64, err string, token string) {
+	textT := strings.TrimSpace(textA)
+	if textT == "" {
+		return nil, "empty text", ""
+	}
+
+	if tokenA == "" {
+		urlT := "https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=" + clientIdA + "&client_secret=" + clientSecretA
+
+		rs := tk.DownloadPage(urlT, "GBK", nil, "", 15)
+
+		matchT := tk.RegFindFirst(rs, `"access_token":"([^"]*)"`, 1)
+
+		if tk.IsErrorString(matchT) {
+			return nil, tk.GetErrorString(matchT), ""
+		}
+
+		tokenA = matchT
+	}
+
+	textT = CleanChineseSentence(textA)
+
+	rs := DownloadPagePostOnlyBaiduNLP("https://aip.baidubce.com/rpc/2.0/nlp/v1/sentiment_classify", tokenA, false, tk.ObjectToJSON(map[string]string{"text": textT}), 15)
+
+	m, errT := objx.FromJSON(rs)
+
+	if errT != nil {
+		return nil, errT.Error(), ""
+	}
+
+	mi := m.Get("items").MSISlice()
+
+	mapT := make(map[string]float64, 0)
+
+	for _, v := range mi {
+		mapT["Sentiment"] = float64(v["sentiment"].(int))
+		mapT["Confidence"] = v["confidence"].(float64)
+		mapT["Positive_prob"] = v["positive_prob"].(float64)
+		mapT["Negative_prob"] = v["negative_prob"].(float64)
+
+	}
+
+	return mapT, "", tokenA
 }
