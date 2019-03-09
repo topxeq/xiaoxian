@@ -892,6 +892,10 @@ func (p *D2VModel) PrepareTrainText(textA string) (resultR string) {
 }
 
 func (p *D2VModel) TrainModelFromString(strA string) (result error) {
+	if strA == "" {
+		return fmt.Errorf("empty string")
+	}
+
 	p.modelM.TrainFromString(strA)
 
 	return nil
@@ -971,6 +975,17 @@ func (p *D2VModel) GetSimilarityOfDocs(doc1 string, doc2 string) float64 {
 	return rs
 }
 
+func (p *D2VModel) GetSimilarityOfDocsEx(doc1 string, doc2 string) float64 {
+
+	vector1 := p.GetDocVectorMust(doc1)
+
+	vector2 := p.GetDocVectorMust(doc2)
+
+	rs := CalCosineSimilarityOfVectors(vector1, vector2)
+
+	return rs
+}
+
 func (p *D2VModel) Dim() int {
 	return p.modelM.GetDim()
 }
@@ -1037,4 +1052,8 @@ func TrainDoc2VecModel(dirA string, patternA string, dataFileA string, modelFile
 	}
 
 	return d2vT, nil
+}
+
+func CalCosineSimilarityOfVectors(f1, f2 []float32) float64 {
+	return tk.CalCosineSimilarityBetweenFloatsBig(tk.Float32ArrayToFloat64Array(f1), tk.Float32ArrayToFloat64Array(f2))
 }
