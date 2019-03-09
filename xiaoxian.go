@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/stretchr/objx"
+	"github.com/topxeq/doc2vec/common"
+	"github.com/topxeq/doc2vec/doc2vec"
+	"github.com/topxeq/doc2vec/segmenter"
 	tk "github.com/topxeq/txtk"
 	"github.com/wangbin/jiebago"
 	"github.com/wangbin/jiebago/posseg"
@@ -716,4 +719,322 @@ func SentimentCnBaiduOL(textA string, tokenA string, clientIdA string, clientSec
 	}
 
 	return mapT, "", tokenA
+}
+
+type D2VModel struct {
+	modelM     doc2vec.IDoc2Vec
+	segmenterM *posseg.Segmenter
+}
+
+func (p *D2VModel) SetSegmenter(segmenterA *posseg.Segmenter) error {
+	if segmenterA == nil {
+		p.segmenterM = segmenter.GetSegmenter()
+
+		errT := p.segmenterM.LoadDictionary("dict.txt")
+
+		if errT != nil {
+			return errT
+		}
+
+		errT = p.segmenterM.LoadUserDictionary("userdict.txt")
+
+	} else {
+		p.segmenterM = segmenterA
+	}
+
+	return nil
+}
+
+func (p *D2VModel) SetSegmenterByDicts(dictA string, userDictA string) error {
+	p.segmenterM = segmenter.GetSegmenter()
+
+	if dictA == "" && userDictA == "" {
+		errT := p.segmenterM.LoadDictionary("dict.txt")
+
+		if errT != nil {
+			return errT
+		}
+
+		errT = p.segmenterM.LoadUserDictionary("userdict.txt")
+
+	} else {
+		errT := p.segmenterM.LoadDictionary(dictA)
+
+		if errT != nil {
+			return errT
+		}
+
+		errT = p.segmenterM.LoadUserDictionary(dictA)
+	}
+
+	return nil
+}
+
+func NewD2VModelFromSegmenter(dimA int, roundA int, segmenterA *posseg.Segmenter) (*D2VModel, error) {
+	p := new(D2VModel)
+
+	p.modelM = doc2vec.NewDoc2Vec(false, false, true, 20, dimA, roundA)
+
+	errT := p.SetSegmenter(segmenterA)
+
+	return p, errT
+}
+
+func NewD2VModelFromDicts(dimA int, roundA int, dictA string, userDictA string) (resultR *D2VModel, errR error) {
+	p := new(D2VModel)
+
+	p.segmenterM = segmenter.GetSegmenter()
+
+	errT := p.segmenterM.LoadDictionary(dictA)
+
+	if errT != nil {
+		return p, fmt.Errorf("载入词典时发生错误：%v", errT)
+	}
+
+	p.segmenterM.LoadUserDictionary(userDictA)
+
+	p.modelM = doc2vec.NewDoc2Vec(false, false, true, 20, dimA, roundA)
+
+	return p, nil
+}
+
+func NewD2VModel(dimA int, roundA int) (resultR *D2VModel, errR error) {
+
+	p := new(D2VModel)
+
+	p.modelM = doc2vec.NewDoc2Vec(false, false, true, 20, dimA, roundA)
+
+	p.SetSegmenter(nil)
+
+	return p, nil
+}
+
+func LoadD2VModel(fileNameA string) (resultR *D2VModel, errR error) {
+	p := new(D2VModel)
+
+	p.SetSegmenter(nil)
+
+	return p, p.LoadModel(fileNameA)
+}
+
+func LoadD2VModelWithDicts(fileNameA string, dictA string, userDictA string) (resultR *D2VModel, errR error) {
+	p := new(D2VModel)
+
+	p.SetSegmenterByDicts(dictA, userDictA)
+
+	return p, p.LoadModel(fileNameA)
+}
+
+func (p *D2VModel) LoadModel(fileNameA string) error {
+	p.modelM = doc2vec.NewDoc2Vec(false, false, true, 20, 0, 0)
+
+	errT := p.modelM.LoadModel(fileNameA)
+
+	if errT != nil {
+		return errT
+	}
+
+	return nil
+}
+
+// func (p *D2VModel) LoadModel(fileNameA string, dimA int, roundA int) error {
+// 	p.modelM = doc2vec.NewDoc2Vec(false, false, true, 20, dimA, roundA)
+
+// 	errT := p.modelM.LoadModel(fileNameA)
+
+// 	if errT != nil {
+// 		return errT
+// 	}
+
+// 	return nil
+// }
+
+func (p *D2VModel) SaveModel(fileNameA string) error {
+	errT := p.modelM.SaveModel(fileNameA)
+
+	if errT != nil {
+		return errT
+	}
+
+	return nil
+}
+
+func (p *D2VModel) Model() *doc2vec.IDoc2Vec {
+	return &p.modelM
+}
+
+func (p *D2VModel) PrepareTrainText(textA string) (resultR string) {
+	defer func() {
+		if r := recover(); r != nil {
+			resultR = tk.GenerateErrorStringF("准备文本时发生错误：%v", r)
+		}
+	}()
+
+	if p.segmenterM == nil {
+		resultR = tk.GenerateErrorStringF("分词器无效")
+		return resultR
+	}
+
+	textT := strings.TrimSpace(strings.Replace(strings.Replace(textA, "\r", "", -1), "\n", "", -1))
+
+	wordListT := []string{}
+
+	for v := range p.segmenterM.Cut(textT, false) {
+		word := common.SBC2DBC(v.Text())
+		wordListT = append(wordListT, word)
+	}
+
+	rs := strings.Join(wordListT, " ")
+
+	rs = tk.RegReplace(rs, `\s+`, " ")
+
+	return rs
+}
+
+func (p *D2VModel) TrainModelFromString(strA string) (result error) {
+	p.modelM.TrainFromString(strA)
+
+	return nil
+}
+
+func (p *D2VModel) TrainModel(dirA string, patternA string, dataFileA string, modelFileNameA string) error {
+	fileListT := tk.GenerateFileListRecursively(dirA, patternA)
+
+	listT := make([]string, 0, len(fileListT))
+
+	for i, v := range fileListT {
+		fileContentT := tk.LoadStringFromFile(v)
+
+		if tk.IsErrorString(fileContentT) {
+			return fmt.Errorf("%v", tk.GetErrorString(fileContentT))
+		}
+
+		textT := p.PrepareTrainText(fileContentT)
+
+		if tk.IsErrorString(textT) {
+			return fmt.Errorf("%v", tk.GetErrorString(textT))
+		}
+
+		listT = append(listT, fmt.Sprintf("%v\t%v", i+1, textT))
+	}
+
+	totalTextT := strings.Join(listT, "\n")
+
+	if dataFileA != "" {
+		tk.SaveStringToFile(totalTextT, "trainData.txt")
+	}
+
+	// d2vT := doc2vec.NewDoc2Vec(false, false, true, 20, dimA, roundA)
+
+	// d2vT.Train("trainData.txt")
+	// p.modelM.TrainFromString(totalTextT)
+
+	errT := p.TrainModelFromString(totalTextT)
+
+	if errT != nil {
+		return errT
+	}
+
+	if modelFileNameA != "" {
+		errT = p.modelM.SaveModel(modelFileNameA)
+
+		if errT != nil {
+			return errT
+		}
+	}
+
+	return nil
+}
+
+func (p *D2VModel) GetDocVector(strA string) ([]float32, error) {
+	textT := p.PrepareTrainText(strA)
+
+	if tk.IsErrorString(textT) {
+		return nil, fmt.Errorf("%v", tk.GetErrorString(textT))
+	}
+
+	rs := p.modelM.InferDoc(textT, p.Round())
+
+	return rs, nil
+}
+
+func (p *D2VModel) GetDocVectorMust(strA string) []float32 {
+	rs, _ := p.GetDocVector(strA)
+
+	return rs
+}
+
+func (p *D2VModel) GetSimilarityOfDocs(doc1 string, doc2 string) float64 {
+
+	rs := p.modelM.DocSimCal(p.PrepareTrainText(doc1), p.PrepareTrainText(doc2))
+
+	return rs
+}
+
+func (p *D2VModel) Dim() int {
+	return p.modelM.GetDim()
+}
+
+func (p *D2VModel) Round() int {
+	return p.modelM.GetRound()
+}
+
+// var SegmenterG *posseg.Segmenter
+
+// func PrepareTrainText(textA string, segmenterA *posseg.Segmenter) (resultR string) {
+// 	defer func() {
+// 		if r := recover(); r != nil {
+// 			resultR = tk.GenerateErrorStringF("准备文本时发生错误：%v", r)
+// 		}
+// 	}()
+
+// 	segmenterT := segmenterA
+
+// 	if segmenterT == nil {
+// 		segmenterT = SegmenterG
+// 	}
+
+// 	if segmenterT == nil {
+// 		segmenterT = segmenter.GetSegmenter()
+
+// 		segmenterT.LoadDictionary("dict.txt")
+
+// 		// if errT != nil {
+// 		// 	panic(fmt.Errorf("载入词典时发生错误：%v", errT))
+// 		// }
+
+// 		segmenterT.LoadUserDictionary("userdict.txt")
+
+// 	}
+
+// 	textT := strings.TrimSpace(strings.Replace(strings.Replace(textA, "\r", "", -1), "\n", "", -1))
+
+// 	wordListT := []string{}
+
+// 	for v := range segmenterT.Cut(textT, false) {
+// 		word := common.SBC2DBC(v.Text())
+// 		wordListT = append(wordListT, word)
+// 	}
+
+// 	rs := strings.Join(wordListT, " ")
+
+// 	rs = tk.RegReplace(rs, `\s+`, " ")
+
+// 	return rs
+// }
+
+func TrainDoc2VecModel(dirA string, patternA string, dataFileA string, modelFileNameA string, dimA int, roundA int) (*D2VModel, error) {
+	d2vT, errT := NewD2VModel(dimA, roundA)
+
+	if errT != nil {
+		return nil, errT
+	}
+
+	errT = d2vT.TrainModel(dirA, patternA, dataFileA, modelFileNameA)
+
+	if errT != nil {
+		return nil, errT
+	}
+
+	return d2vT, nil
 }
