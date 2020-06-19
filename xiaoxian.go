@@ -628,6 +628,53 @@ func TokenizeCnBaiduOL(textA string, ifCustomA bool, tokenA string, clientIdA st
 	return strings.Join(tmpsl, " "), "", tokenA
 }
 
+func GetVectorCnBaiduOL(textA string, tokenA string, clientIdA string, clientSecretA string) (rs string, err string, token string) {
+	textT := strings.TrimSpace(textA)
+	if textT == "" {
+		return "", "empty text", ""
+	}
+
+	if tokenA == "" {
+		urlT := "https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=" + clientIdA + "&client_secret=" + clientSecretA
+
+		rs := tk.DownloadPage(urlT, "GBK", nil, "", 15)
+
+		matchT := tk.RegFindFirst(rs, `"access_token":"([^"]*)"`, 1)
+
+		if tk.IsErrorString(matchT) {
+			return "", tk.GetErrorString(matchT), ""
+		}
+
+		tokenA = matchT
+	}
+
+	textT = CleanChineseSentence(textA)
+
+	rs = DownloadPagePostOnlyBaiduNLP("https://aip.baidubce.com/rpc/2.0/nlp/v2/word_emb_vec", tokenA, false, tk.ObjectToJSON(map[string]string{"word": textT}), 15)
+
+	return rs, "", tokenA
+
+	// m, errT := objx.FromJSON(rs)
+
+	// if errT != nil {
+	// 	return "", errT.Error(), ""
+	// }
+
+	// return , "", tokenA
+
+	// mi := m.Get("items").MSISlice()
+
+	// var tmpsl = make([]string, 0)
+
+	// for _, v := range mi {
+	// 	tmpss := v["item"].(string)
+
+	// 	tmpsl = append(tmpsl, tmpss)
+	// }
+
+	// return strings.Join(tmpsl, " "), "", tokenA
+}
+
 func NerCnBaiduOL(textA string, ifCustomA bool, tokenA string, clientIdA string, clientSecretA string) (rs string, err string, token string) {
 	textT := strings.TrimSpace(textA)
 	if textT == "" {
